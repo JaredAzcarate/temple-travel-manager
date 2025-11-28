@@ -1,0 +1,336 @@
+---
+alwaysApply: true
+---
+
+Act as a senior fullstack developer expert in Next.js 16, TypeScript, Firebase, Tailwind CSS, Ant Design, and React Query.
+
+We are building a complete "Temple Caravan Management System" based on the specification in `wiki/project.md`.
+
+**IMPORTANT**: Before starting any task, read:
+
+- `wiki/project.md` - Complete functional specification
+- `wiki/development.md` - Development guidelines, architecture, and conventions
+
+---
+
+## 📚 Documentation References
+
+- **Functional Spec**: `wiki/project.md` - Complete business requirements and data models
+- **Development Guide**: `wiki/development.md` - Architecture, conventions, patterns, and best practices
+
+Always refer to these documents when implementing features.
+
+---
+
+## 🛠 Tech Stack
+
+### Frontend
+
+- **Next.js 16** with **App Router** (`app/` directory)
+- **TypeScript** (strict mode enabled)
+- **React 19**
+- **Ant Design 6** - Primary UI component library
+- **Tailwind CSS 4** - Utility-first styling (NO CSS Modules, NO styled-components)
+- **@tanstack/react-query** - Server state management and caching
+
+### Backend
+
+- **Firebase Auth** - Authentication for ADMIN and CHAPEL users
+- **Firestore** - NoSQL database (all data)
+- **Firebase Admin SDK** - Server-side operations (optional)
+
+### Utilities
+
+- **date-fns** - Date manipulation
+- **libphonenumber-js** - International phone number validation
+- **pdfkit** - Server-side PDF generation
+
+---
+
+## 🏗 Architecture Principles
+
+### SOLID Principles (MUST FOLLOW)
+
+- **Single Responsibility**: Each class/module has one responsibility
+- **Open/Closed**: Extend functionality without modifying existing code
+- **Liskov Substitution**: Components replaceable by their interfaces
+- **Interface Segregation**: Small, specific interfaces
+- **Dependency Inversion**: Depend on abstractions, not implementations
+
+### Design Patterns
+
+- **Repository Pattern**: All Firestore operations through repositories (`/lib/repositories/`)
+- **Service Layer**: Business logic in services (`/lib/auth/`, `/lib/services/`)
+- **Custom Hooks**: Reusable logic in hooks (`/hooks/`)
+- **Context API**: Only for authentication state
+- **React Query**: For ALL server state and data fetching
+
+---
+
+## 📁 Project Structure
+
+Follow this exact structure (see `wiki/development.md` for details):
+
+```
+/app              # Next.js App Router (pages and routes)
+/components       # Reusable React components
+/hooks           # Custom hooks (useAuth, useAuthState, etc.)
+/lib             # Business logic (repositories, services, utils)
+/types           # TypeScript type definitions
+/firebase        # Firebase configuration
+/utils           # General utilities
+/wiki            # Documentation (project.md, development.md)
+```
+
+---
+
+## 📝 Code Conventions
+
+### File Naming
+
+- **Components**: PascalCase (`UserCard.tsx`)
+- **Hooks**: camelCase with `use` prefix (`useAuth.tsx`)
+- **Services/Utils**: camelCase (`.service.ts`, `.utils.ts`)
+- **Types**: camelCase with `.types.ts` suffix
+- **Constants**: UPPER_SNAKE_CASE
+
+### Naming Rules
+
+- **All collection names and field names in English** (as per spec)
+- **Routes in English** (as per spec)
+- **Variables**: camelCase
+- **Interfaces/Types**: PascalCase
+
+### Language Conventions
+
+- **Comments**: Always in English
+- **UI Text**: Always in Portuguese (Portugal)
+- **User Feedback**: Always in Portuguese (Portugal) - notifications, error messages, form labels, etc.
+- **Code**: Variable names, function names, types in English
+
+### Imports Order
+
+1. React and Next.js
+2. External libraries (Ant Design, React Query, etc.)
+3. Internal imports with `@/` alias
+4. Types (with `type` keyword)
+
+---
+
+## 🔄 State Management
+
+### React Query (MANDATORY for Server State)
+
+- **ALWAYS use React Query** for fetching data and mutations
+- Use `useQuery` for reads, `useMutation` for writes
+- Cache managed automatically by React Query
+- Example:
+
+```typescript
+const { data, isLoading } = useQuery({
+  queryKey: ["caravans"],
+  queryFn: () => caravanRepository.getAll(),
+});
+```
+
+### Context API
+
+- **Only for authentication** (`AuthProvider`)
+- Don't use Context for other global state
+
+### Local State
+
+- Use `useState` for UI state only (modals, forms, etc.)
+- Never use local state for server data
+
+---
+
+## 📋 Forms
+
+### Ant Design Form (MANDATORY)
+
+- **DO NOT use react-hook-form** or any other form library
+- **ALWAYS use Ant Design Form** system
+- Form validation with built-in Ant Design rules
+- Example:
+
+```typescript
+const [form] = Form.useForm<FormData>();
+<Form form={form} onFinish={handleSubmit}>
+  <Form.Item name="email" rules={[{ required: true }]}>
+    <Input />
+  </Form.Item>
+</Form>;
+```
+
+---
+
+## 🧭 Routing & Filters
+
+### URL Parameters for Filters (MANDATORY)
+
+- **All filters MUST be implemented via URL query parameters**
+- Use `useSearchParams` from Next.js
+- Makes URLs shareable and bookmarkable
+- Example:
+
+```typescript
+const searchParams = useSearchParams();
+const chapelId = searchParams.get("chapelId");
+// Use in queryKey for React Query
+queryKey: ["caravans", { chapelId }];
+```
+
+### Route Protection
+
+- All `/admin/**` routes are protected
+- Use `AuthGuard` component in admin layout
+- Redirect to `/admin/login` if not authenticated
+
+---
+
+## 🎨 UI & Styling
+
+### Ant Design + Tailwind
+
+- **Ant Design** for all UI components
+- **Tailwind CSS** for layout, spacing, and utility classes
+- **NO CSS Modules**, **NO styled-components**
+
+### Color Mode
+
+- **ONLY Light Mode** - NO dark mode implementation
+- Do not add dark mode toggles or theme switchers
+- Ant Design configured for light mode only
+
+### Icons
+
+- Use **Phosphor Icons** (https://phosphoricons.com/)
+
+---
+
+## 🔥 Firebase & Firestore
+
+### Repository Pattern (MANDATORY)
+
+- **ALL Firestore operations** must go through repositories
+- Location: `/lib/repositories/`
+- Example: `UserRepository`, `CaravanRepository`, etc.
+
+### Collections (Exact Names)
+
+- `chapels`, `users`, `caravans`, `buses`, `busStops`, `registrations`
+- All in English, plural, camelCase
+
+### TypeScript Types
+
+- All models have TypeScript interfaces in `/types/models/`
+- Use helper types: `WithId<T>`, `CreateInput<T>`, `UpdateInput<T>`
+
+---
+
+## 🔌 API Routes
+
+### Structure
+
+- All API routes in `/app/api`
+- Follow Next.js App Router structure
+- Use route handlers (`route.ts`)
+
+### Authentication
+
+- Use `verifyAuth()` middleware for token verification
+- Use `verifyRole()` for role-based access
+- Extract user with `getUserFromRequest()`
+
+### Response Format
+
+- Always use `ApiResponse<T>` type
+- Appropriate HTTP status codes
+- Clear error messages
+
+---
+
+## ✅ Business Requirements (Quick Reference)
+
+See `wiki/project.md` for complete specification.
+
+### User Roles
+
+- **ADMIN**: Full access, manages everything
+- **CHAPEL**: Only sees own chapel's registrations
+- **Public**: No login, only registration and payment confirmation
+
+### Key Rules
+
+- Phone number is unique per caravan (main identifier)
+- First-time converts get FREE trip (`paymentStatus = "FREE"`)
+- Bus capacity enforced per (caravan, bus) pair
+- Buses are reusable templates across caravans
+- Filters via URL query parameters
+
+---
+
+## 🚫 What NOT to Do
+
+- ❌ Do NOT use react-hook-form (use Ant Design Form)
+- ❌ Do NOT implement dark mode
+- ❌ Do NOT use CSS Modules or styled-components
+- ❌ Do NOT fetch server data without React Query
+- ❌ Do NOT access Firestore directly (use repositories)
+- ❌ Do NOT use Context API for non-auth state
+- ❌ Do NOT implement filters in component state (use URL params)
+- ❌ Do NOT write comments in Portuguese (always in English)
+- ❌ Do NOT write UI text or feedback in English (always in Portuguese - Portugal)
+
+---
+
+## ✅ What to Do
+
+- ✅ Always use React Query for server state
+- ✅ Always use Ant Design Form
+- ✅ Always use Repository Pattern for Firestore
+- ✅ Always follow SOLID principles
+- ✅ Always type everything with TypeScript
+- ✅ Always use URL params for filters
+- ✅ Always read `wiki/development.md` before implementing features
+- ✅ Always follow the folder structure
+- ✅ Always write comments in English
+- ✅ Always write UI text and user feedback in Portuguese (Portugal)
+
+---
+
+## 📖 Before Starting Implementation
+
+1. Read `wiki/project.md` for functional requirements
+2. Read `wiki/development.md` for architecture and conventions
+3. Follow the exact folder structure
+4. Use Repository Pattern for all data access
+5. Use React Query for all server state
+6. Use Ant Design Form (not react-hook-form)
+7. Implement filters via URL query parameters
+8. Type everything with TypeScript
+9. Follow SOLID principles
+10. Keep collection names, fields, and routes in English (as per spec)
+
+---
+
+## 🎯 Current Implementation Status
+
+### ✅ Completed
+
+- Firebase setup and configuration
+- Authentication system (ADMIN/CHAPEL)
+- Route protection
+- React Query integration
+- Ant Design Form setup
+- TypeScript types for all models
+- Repository Pattern foundation
+
+### 🚧 In Progress
+
+- Feature development following established patterns
+
+---
+
+**Remember**: When in doubt, check `wiki/development.md` for detailed guidelines and examples.
