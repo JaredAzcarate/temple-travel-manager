@@ -59,9 +59,9 @@ Always refer to these documents when implementing features.
 
 ### Design Patterns
 
-- **Repository Pattern**: All Firestore operations through repositories (`/lib/repositories/`)
-- **Service Layer**: Business logic in services (`/lib/auth/`, `/lib/services/`)
-- **Custom Hooks**: Reusable logic in hooks (`/hooks/`)
+- **Repository Pattern**: All Firestore operations through repositories (`/common/lib/repositories/`)
+- **Service Layer**: Business logic in services (`/features/[feature]/services/`, `/common/services/`)
+- **Custom Hooks**: Reusable logic in hooks (`/features/[feature]/hooks/`, `/common/hooks/`)
 - **Context API**: Only for authentication state
 - **React Query**: For ALL server state and data fetching
 
@@ -73,13 +73,17 @@ Follow this exact structure (see `wiki/development.md` for details):
 
 ```
 /app              # Next.js App Router (pages and routes)
-/components       # Reusable React components
-/hooks           # Custom hooks (useAuth, useAuthState, etc.)
-/lib             # Business logic (repositories, services, utils)
-/types           # TypeScript type definitions
-/firebase        # Firebase configuration
-/utils           # General utilities
-/wiki            # Documentation (project.md, development.md)
+/features         # Features de la app (auth, caravans, etc.)
+  /[feature]/     # Cada feature agrupa hooks, services, types, components
+/common           # Código compartido entre features
+  /hooks          # Hooks compartidos
+  /services       # Servicios compartidos
+  /types          # Tipos compartidos
+  /components     # Componentes reutilizables globales (layout, shared)
+  /providers      # React providers (Ant Design, React Query)
+  /lib            # Business logic (repositories, firebase config)
+  /utils          # General utilities
+/wiki             # Documentation (project.md, development.md)
 ```
 
 ---
