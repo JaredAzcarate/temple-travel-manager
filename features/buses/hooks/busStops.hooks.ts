@@ -1,9 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CreateBusStopInput,
   UpdateBusStopInput,
 } from "@/features/buses/models/busStops.model";
 import { BusStopRepository } from "@/features/buses/repositories/busStops.repository";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 const repository = new BusStopRepository();
 

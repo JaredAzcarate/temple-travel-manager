@@ -1,12 +1,12 @@
 "use client";
 
+import { useBusStopsByBusId } from "@/features/buses/hooks/busStops.hooks";
+import { BusStopWithId } from "@/features/buses/models/busStops.model";
 import { useChapels } from "@/features/chapels/hooks/chapels.hooks";
 import { Drawer, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { useMemo } from "react";
-import { useBusStopsByBusId } from "@/features/buses/hooks/busStops.hooks";
-import { BusStopWithId } from "@/features/buses/models/busStops.model";
 
 interface BusStopsModalProps {
   busId: string;
