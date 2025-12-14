@@ -1,7 +1,11 @@
 "use client";
 
-import { ConfigProvider } from "antd";
+import { App, ConfigProvider } from "antd";
+import dayjs from "dayjs";
+import "dayjs/locale/pt";
 import { ReactNode } from "react";
+
+dayjs.locale("pt");
 
 interface AntdProviderProps {
   children: ReactNode;
@@ -16,8 +20,7 @@ export function AntdProvider({ children }: AntdProviderProps) {
         },
       }}
     >
-      {children}
+      <App>{children}</App>
     </ConfigProvider>
   );
 }
-
