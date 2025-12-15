@@ -6,10 +6,8 @@ import {
   doc,
   getDoc,
   getDocs,
-  query,
   Timestamp,
   updateDoc,
-  where,
 } from "firebase/firestore";
 import {
   CaravanWithId,
@@ -73,14 +71,21 @@ export class CaravanRepository {
   }
 
   async getActive(): Promise<CaravanWithId[]> {
-    const q = query(
-      collection(db, this.collectionName),
-      where("isActive", "==", true)
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as CaravanWithId[];
+    const now = Timestamp.now();
+    const allCaravans = await this.getAll();
+
+    // Filter caravans where current time is between formOpenAt and formCloseAt
+    return allCaravans.filter((caravan) => {
+      const formOpenAt = caravan.formOpenAt;
+      const formCloseAt = caravan.formCloseAt;
+
+      if (!formOpenAt || !formCloseAt) return false;
+
+      const nowMillis = now.toMillis();
+      const openMillis = formOpenAt.toMillis();
+      const closeMillis = formCloseAt.toMillis();
+
+      return nowMillis >= openMillis && nowMillis <= closeMillis;
+    });
   }
 }

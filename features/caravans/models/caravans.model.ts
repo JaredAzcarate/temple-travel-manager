@@ -3,7 +3,6 @@ import { Timestamp } from "firebase/firestore";
 
 export interface Caravan {
   name: string;
-  templeName?: string;
   departureAt: Timestamp;
   returnAt: Timestamp;
   formOpenAt: Timestamp;

@@ -1,5 +1,6 @@
 "use client";
 
+import { useBuses } from "@/features/buses/hooks/buses.hooks";
 import {
   useCreateCaravan,
   useUpdateCaravan,
@@ -9,7 +10,7 @@ import {
   CreateCaravanInput,
   UpdateCaravanInput,
 } from "@/features/caravans/models/caravans.model";
-import { App, Button, DatePicker, Form, Input, Switch } from "antd";
+import { App, Button, DatePicker, Form, Input, Select } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { Timestamp } from "firebase/firestore";
 import { useRouter } from "next/navigation";
@@ -17,13 +18,11 @@ import { useEffect } from "react";
 
 interface FormValues {
   name: string;
-  templeName?: string;
   departureAt: Dayjs;
   returnAt: Dayjs;
   formOpenAt: Dayjs;
   formCloseAt: Dayjs;
-  isActive: boolean;
-  busIds?: string[];
+  busIds?: { busId: string }[];
 }
 
 interface CaravanFormProps {
@@ -42,6 +41,7 @@ export const CaravanForm = ({
   const { notification } = App.useApp();
   const router = useRouter();
   const [form] = Form.useForm<FormValues>();
+  const { buses, loading: loadingBuses } = useBuses();
 
   const {
     createCaravan,
@@ -61,7 +61,6 @@ export const CaravanForm = ({
     if (mode === "edit" && initialCaravanData) {
       form.setFieldsValue({
         name: initialCaravanData.name,
-        templeName: initialCaravanData.templeName,
         departureAt: initialCaravanData.departureAt
           ? dayjs(initialCaravanData.departureAt.toDate())
           : undefined,
@@ -74,8 +73,7 @@ export const CaravanForm = ({
         formCloseAt: initialCaravanData.formCloseAt
           ? dayjs(initialCaravanData.formCloseAt.toDate())
           : undefined,
-        isActive: initialCaravanData.isActive ?? false,
-        busIds: initialCaravanData.busIds ?? [],
+        busIds: initialCaravanData.busIds?.map((busId) => ({ busId })) ?? [],
       });
     }
   }, [mode, initialCaravanData, form]);
@@ -140,28 +138,36 @@ export const CaravanForm = ({
       return Timestamp.fromDate(dayjsValue.toDate());
     };
 
+    const busIdsArray = values.busIds?.map((item) => item.busId) ?? [];
+    const formOpenAt = convertToTimestamp(values.formOpenAt);
+    const formCloseAt = convertToTimestamp(values.formCloseAt);
+    const now = Timestamp.now();
+
+    // Calculate isActive based on current time being between formOpenAt and formCloseAt
+    const isActive =
+      now.toMillis() >= formOpenAt.toMillis() &&
+      now.toMillis() <= formCloseAt.toMillis();
+
     if (mode === "create") {
       const input: CreateCaravanInput = {
         name: values.name,
-        templeName: values.templeName,
         departureAt: convertToTimestamp(values.departureAt),
         returnAt: convertToTimestamp(values.returnAt),
-        formOpenAt: convertToTimestamp(values.formOpenAt),
-        formCloseAt: convertToTimestamp(values.formCloseAt),
-        isActive: values.isActive ?? false,
-        busIds: values.busIds ?? [],
+        formOpenAt,
+        formCloseAt,
+        isActive,
+        busIds: busIdsArray,
       };
       createCaravan(input);
     } else if (mode === "edit" && caravanId) {
       const input: UpdateCaravanInput = {
         name: values.name,
-        templeName: values.templeName,
         departureAt: convertToTimestamp(values.departureAt),
         returnAt: convertToTimestamp(values.returnAt),
-        formOpenAt: convertToTimestamp(values.formOpenAt),
-        formCloseAt: convertToTimestamp(values.formCloseAt),
-        isActive: values.isActive ?? false,
-        busIds: values.busIds ?? [],
+        formOpenAt,
+        formCloseAt,
+        isActive,
+        busIds: busIdsArray,
       };
       updateCaravan(caravanId, input);
     }
@@ -176,8 +182,33 @@ export const CaravanForm = ({
       onFinish={handleSubmit}
       style={{ width: "100%" }}
       initialValues={{
-        isActive: false,
         busIds: [],
+      }}
+      onValuesChange={(changedValues, allValues) => {
+        if (changedValues.busIds) {
+          const currentBusIds = allValues.busIds || [];
+          const selectedBusIds = currentBusIds
+            .map((item: { busId?: string }) => item?.busId)
+            .filter((id): id is string => Boolean(id));
+          const duplicates = selectedBusIds.filter(
+            (id: string, index: number) => selectedBusIds.indexOf(id) !== index
+          );
+          if (duplicates.length > 0) {
+            form.setFields([
+              {
+                name: ["busIds"],
+                errors: ["Não pode haver buses duplicados"],
+              },
+            ]);
+          } else {
+            form.setFields([
+              {
+                name: ["busIds"],
+                errors: undefined,
+              },
+            ]);
+          }
+        }
       }}
     >
       <Form.Item
@@ -188,10 +219,6 @@ export const CaravanForm = ({
         ]}
       >
         <Input placeholder="Ex: Caravana de Março 2025" />
-      </Form.Item>
-
-      <Form.Item name="templeName" label="Nome do Templo">
-        <Input placeholder="Ex: Templo de Lisboa" />
       </Form.Item>
 
       <Form.Item
@@ -266,8 +293,97 @@ export const CaravanForm = ({
         />
       </Form.Item>
 
-      <Form.Item name="isActive" label="Caravana Ativa" valuePropName="checked">
-        <Switch />
+      <Form.Item
+        label="Autocarros"
+        required
+        tooltip="Adicione pelo menos um autocarro à caravana"
+      >
+        <Form.List name="busIds">
+          {(fields, { add, remove }) => (
+            <>
+              {fields.map(({ key, name, ...restField }) => {
+                const currentBusIds = form.getFieldValue("busIds") || [];
+                const currentBusId = currentBusIds[name]?.busId;
+                const selectedBusIds = currentBusIds
+                  .map((item: { busId?: string }, idx: number) =>
+                    idx !== name ? item?.busId : undefined
+                  )
+                  .filter(Boolean);
+                const availableBuses = buses.filter(
+                  (bus) => !selectedBusIds.includes(bus.id)
+                );
+                const allBusesForSelect = currentBusId
+                  ? [
+                      ...buses
+                        .filter((bus) => bus.id === currentBusId)
+                        .map((bus) => ({
+                          label: `${bus.name} (Capacidade: ${bus.capacity})`,
+                          value: bus.id,
+                        })),
+                      ...availableBuses.map((bus) => ({
+                        label: `${bus.name} (Capacidade: ${bus.capacity})`,
+                        value: bus.id,
+                      })),
+                    ]
+                  : availableBuses.map((bus) => ({
+                      label: `${bus.name} (Capacidade: ${bus.capacity})`,
+                      value: bus.id,
+                    }));
+
+                return (
+                  <div
+                    key={key}
+                    className="mb-4 p-4 border border-gray-200 rounded-lg"
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="flex-1">
+                        <Form.Item
+                          {...restField}
+                          name={[name, "busId"]}
+                          label="Autocarro"
+                          rules={[
+                            {
+                              required: true,
+                              message: "Por favor, selecione um autocarro",
+                            },
+                          ]}
+                        >
+                          <Select
+                            placeholder="Selecione um autocarro"
+                            loading={loadingBuses}
+                            options={allBusesForSelect}
+                          />
+                        </Form.Item>
+                      </div>
+
+                      <div className="flex items-end">
+                        <Button
+                          type="text"
+                          danger
+                          onClick={() => remove(name)}
+                          disabled={isPending}
+                        >
+                          Remover
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              <Form.Item>
+                <Button
+                  type="dashed"
+                  onClick={() => add()}
+                  block
+                  disabled={isPending}
+                >
+                  + Adicionar Autocarro
+                </Button>
+              </Form.Item>
+            </>
+          )}
+        </Form.List>
       </Form.Item>
 
       <Form.Item>
@@ -287,4 +403,3 @@ export const CaravanForm = ({
     </Form>
   );
 };
-

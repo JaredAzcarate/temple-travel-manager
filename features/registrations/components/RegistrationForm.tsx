@@ -1,12 +1,14 @@
 "use client";
 
-import { useBuses } from "@/features/buses/hooks/buses.hooks";
+import { useBus, useBuses } from "@/features/buses/hooks/buses.hooks";
+import { useBusStops } from "@/features/buses/hooks/busStops.hooks";
 import {
   useActiveCaravans,
   useCaravan,
 } from "@/features/caravans/hooks/caravans.hooks";
 import { useChapels } from "@/features/chapels/hooks/chapels.hooks";
 import {
+  useCountActiveByBus,
   useCreateRegistration,
   useUpdateRegistration,
 } from "@/features/registrations/hooks/registrations.hooks";
@@ -16,7 +18,16 @@ import {
   RegistrationWithId,
   UpdateRegistrationInput,
 } from "@/features/registrations/models/registrations.model";
-import { App, Button, Form, Input, Radio, Select, Switch } from "antd";
+import {
+  App,
+  Button,
+  Checkbox,
+  Form,
+  Input,
+  Radio,
+  Select,
+  Switch,
+} from "antd";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo } from "react";
 
@@ -26,7 +37,7 @@ interface FormValues {
   busId: string;
   phone: string;
   fullName: string;
-  isAdult: boolean;
+  isMinor: boolean;
   gender: "M" | "F";
   isOfficiator: boolean;
   legalGuardianName?: string;
@@ -94,17 +105,68 @@ export const RegistrationForm = ({
     useActiveCaravans();
   const { chapels, loading: loadingChapels } = useChapels();
   const { buses, loading: loadingBuses } = useBuses();
+  const { busStops, loading: loadingBusStops } = useBusStops();
 
   const selectedCaravanId = Form.useWatch("caravanId", form);
+  const selectedChapelId = Form.useWatch("chapelId", form);
+  const selectedBusId = Form.useWatch("busId", form);
   const selectedOrdinanceType = Form.useWatch("ordinanceType", form);
-  const isAdult = Form.useWatch("isAdult", form);
+  const isMinor = Form.useWatch("isMinor", form);
 
   const { caravan: selectedCaravan } = useCaravan(selectedCaravanId || "");
+  const { bus: selectedBus } = useBus(selectedBusId || "");
+  const { count: occupiedCount } = useCountActiveByBus(
+    selectedCaravanId || "",
+    selectedBusId || ""
+  );
 
   const availableBuses = useMemo(() => {
     if (!selectedCaravan) return buses;
     return buses.filter((bus) => selectedCaravan.busIds.includes(bus.id));
   }, [buses, selectedCaravan]);
+
+  // Find bus that passes through selected chapel
+  const busForChapel = useMemo(() => {
+    if (!selectedChapelId || !selectedCaravan || !busStops.length) return null;
+
+    // Find bus stops for the selected chapel
+    const stopsForChapel = busStops.filter(
+      (stop) => stop.chapelId === selectedChapelId
+    );
+
+    if (stopsForChapel.length === 0) return null;
+
+    // Find the first bus that:
+    // 1. Has a stop at this chapel
+    // 2. Is in the caravan's busIds
+    // 3. Has the lowest order (first in route)
+    const validStops = stopsForChapel
+      .filter((stop) => selectedCaravan.busIds.includes(stop.busId))
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    if (validStops.length === 0) return null;
+
+    return validStops[0].busId;
+  }, [selectedChapelId, selectedCaravan, busStops]);
+
+  // Auto-select bus when chapel is selected (only in create mode)
+  useEffect(() => {
+    if (mode === "create" && busForChapel && selectedChapelId) {
+      form.setFieldsValue({ busId: busForChapel });
+    }
+  }, [busForChapel, selectedChapelId, form, mode]);
+
+  const capacityInfo = useMemo(() => {
+    if (!selectedBus || !selectedCaravanId || !selectedBusId) return null;
+    const available = selectedBus.capacity - occupiedCount;
+    const isFull = occupiedCount >= selectedBus.capacity;
+    return {
+      occupied: occupiedCount,
+      capacity: selectedBus.capacity,
+      available,
+      isFull,
+    };
+  }, [selectedBus, occupiedCount, selectedCaravanId, selectedBusId]);
 
   const availableSlots = useMemo(() => {
     if (!selectedOrdinanceType) return [];
@@ -119,7 +181,7 @@ export const RegistrationForm = ({
         busId: initialRegistrationData.busId,
         phone: initialRegistrationData.phone,
         fullName: initialRegistrationData.fullName,
-        isAdult: initialRegistrationData.isAdult,
+        isMinor: !initialRegistrationData.isAdult,
         gender: initialRegistrationData.gender,
         isOfficiator: initialRegistrationData.isOfficiator,
         legalGuardianName: initialRegistrationData.legalGuardianName,
@@ -198,16 +260,37 @@ export const RegistrationForm = ({
   }, [selectedOrdinanceType, availableSlots, form, mode]);
 
   useEffect(() => {
-    if (!isAdult && mode === "create") {
+    if (!isMinor && mode === "create") {
       form.setFieldsValue({
         legalGuardianName: undefined,
         legalGuardianEmail: undefined,
         legalGuardianPhone: undefined,
       });
     }
-  }, [isAdult, form, mode]);
+  }, [isMinor, form, mode]);
 
-  const handleSubmit = (values: FormValues) => {
+  const handleSubmit = async (values: FormValues) => {
+    const shouldValidateCapacity =
+      mode === "create" ||
+      (mode === "edit" &&
+        registrationId &&
+        initialRegistrationData?.busId !== values.busId);
+
+    if (shouldValidateCapacity && values.busId && values.caravanId) {
+      if (
+        selectedBus &&
+        occupiedCount >= selectedBus.capacity &&
+        selectedCaravanId === values.caravanId &&
+        selectedBusId === values.busId
+      ) {
+        notification.error({
+          title: "Erro",
+          description: `Este autocarro já está cheio (${occupiedCount}/${selectedBus.capacity} lugares ocupados)`,
+        });
+        return;
+      }
+    }
+
     if (mode === "create") {
       const paymentStatus: "PENDING" | "FREE" = values.isFirstTimeConvert
         ? "FREE"
@@ -219,15 +302,21 @@ export const RegistrationForm = ({
         busId: values.busId,
         phone: values.phone,
         fullName: values.fullName,
-        isAdult: values.isAdult,
+        isAdult: !values.isMinor,
         gender: values.gender,
-        isOfficiator: values.isOfficiator,
-        legalGuardianName: values.legalGuardianName,
-        legalGuardianEmail: values.legalGuardianEmail,
-        legalGuardianPhone: values.legalGuardianPhone,
+        isOfficiator: values.isOfficiator ?? false,
+        ...(values.legalGuardianName && {
+          legalGuardianName: values.legalGuardianName,
+        }),
+        ...(values.legalGuardianEmail && {
+          legalGuardianEmail: values.legalGuardianEmail,
+        }),
+        ...(values.legalGuardianPhone && {
+          legalGuardianPhone: values.legalGuardianPhone,
+        }),
         ordinanceType: values.ordinanceType,
         ordinanceSlot: values.ordinanceSlot,
-        isFirstTimeConvert: values.isFirstTimeConvert,
+        isFirstTimeConvert: values.isFirstTimeConvert ?? false,
         paymentStatus,
         participationStatus: "ACTIVE",
       };
@@ -239,15 +328,21 @@ export const RegistrationForm = ({
         busId: values.busId,
         phone: values.phone,
         fullName: values.fullName,
-        isAdult: values.isAdult,
+        isAdult: !values.isMinor,
         gender: values.gender,
-        isOfficiator: values.isOfficiator,
-        legalGuardianName: values.legalGuardianName,
-        legalGuardianEmail: values.legalGuardianEmail,
-        legalGuardianPhone: values.legalGuardianPhone,
+        isOfficiator: values.isOfficiator ?? false,
+        ...(values.legalGuardianName && {
+          legalGuardianName: values.legalGuardianName,
+        }),
+        ...(values.legalGuardianEmail && {
+          legalGuardianEmail: values.legalGuardianEmail,
+        }),
+        ...(values.legalGuardianPhone && {
+          legalGuardianPhone: values.legalGuardianPhone,
+        }),
         ordinanceType: values.ordinanceType,
         ordinanceSlot: values.ordinanceSlot,
-        isFirstTimeConvert: values.isFirstTimeConvert,
+        isFirstTimeConvert: values.isFirstTimeConvert ?? false,
       };
       updateRegistration(registrationId, input);
     }
@@ -261,6 +356,11 @@ export const RegistrationForm = ({
       layout="vertical"
       onFinish={handleSubmit}
       style={{ width: "100%" }}
+      initialValues={{
+        isMinor: false,
+        isOfficiator: false,
+        isFirstTimeConvert: false,
+      }}
     >
       <Form.Item
         name="caravanId"
@@ -303,46 +403,70 @@ export const RegistrationForm = ({
       >
         <Select
           placeholder="Selecione um autocarro"
-          loading={loadingBuses}
-          disabled={!selectedCaravanId}
+          loading={loadingBuses || loadingBusStops}
+          disabled={!selectedCaravanId || !selectedChapelId}
           options={availableBuses.map((bus) => ({
             label: `${bus.name} (Capacidade: ${bus.capacity})`,
             value: bus.id,
+            disabled: false,
           }))}
         />
       </Form.Item>
+      {capacityInfo && (
+        <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+          <div className="text-sm">
+            <strong>Capacidade do Autocarro:</strong>
+            <div className="mt-1">
+              {capacityInfo.occupied} lugares ocupados de{" "}
+              {capacityInfo.capacity} ({capacityInfo.available} disponíveis)
+            </div>
+            {capacityInfo.isFull && (
+              <div className="mt-2 text-red-600 font-semibold">
+                Este autocarro está cheio!
+              </div>
+            )}
+            {!capacityInfo.isFull && capacityInfo.available <= 3 && (
+              <div className="mt-2 text-orange-600 font-semibold">
+                Atenção: Restam apenas {capacityInfo.available} lugares
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
-      <Form.Item
-        name="fullName"
-        label="Nome Completo"
-        rules={[
-          { required: true, message: "Por favor, insira o nome completo" },
-        ]}
-      >
-        <Input placeholder="Ex: João Silva" />
-      </Form.Item>
+      <div className="flex gap-4">
+        <Form.Item
+          name="fullName"
+          label="Nome Completo"
+          rules={[
+            { required: true, message: "Por favor, insira o nome completo" },
+          ]}
+          className="flex-1"
+        >
+          <Input placeholder="Ex: João Silva" />
+        </Form.Item>
 
-      <Form.Item
-        name="phone"
-        label="Número de Telefone"
-        rules={[
-          { required: true, message: "Por favor, insira o número de telefone" },
-          {
-            pattern: /^\+?[1-9]\d{1,14}$/,
-            message: "Por favor, insira um número de telefone válido",
-          },
-        ]}
-      >
-        <Input placeholder="Ex: +351912345678" />
-      </Form.Item>
+        <Form.Item
+          name="phone"
+          label="Número de Telefone"
+          rules={[
+            {
+              required: true,
+              message: "Por favor, insira o número de telefone",
+            },
+            {
+              pattern: /^\+?[1-9]\d{1,14}$/,
+              message: "Por favor, insira um número de telefone válido",
+            },
+          ]}
+          className="flex-1"
+        >
+          <Input placeholder="Ex: +351912345678" />
+        </Form.Item>
+      </div>
 
-      <Form.Item
-        name="isAdult"
-        label="És adulto ou jovem?"
-        rules={[{ required: true, message: "Por favor, selecione uma opção" }]}
-        valuePropName="checked"
-      >
-        <Switch checkedChildren="Adulto" unCheckedChildren="Jovem" />
+      <Form.Item name="isMinor" valuePropName="checked">
+        <Checkbox>Esta inscrição é de um jovem menor de idade</Checkbox>
       </Form.Item>
 
       <Form.Item
@@ -364,14 +488,14 @@ export const RegistrationForm = ({
         <Switch />
       </Form.Item>
 
-      {!isAdult && (
+      {isMinor && (
         <>
           <Form.Item
             name="legalGuardianName"
             label="Nome do Responsável Legal"
             rules={[
               {
-                required: !isAdult,
+                required: isMinor,
                 message: "Por favor, insira o nome do responsável legal",
               },
             ]}
@@ -407,38 +531,44 @@ export const RegistrationForm = ({
         </>
       )}
 
-      <Form.Item
-        name="ordinanceType"
-        label="Tipo de Ordenança"
-        rules={[
-          {
-            required: true,
-            message: "Por favor, selecione o tipo de ordenança",
-          },
-        ]}
-      >
-        <Select placeholder="Selecione o tipo de ordenança">
-          <Select.Option value="BAPTISTRY">Batistério</Select.Option>
-          <Select.Option value="INITIATORY">Iniciatória</Select.Option>
-          <Select.Option value="ENDOWMENT">Investidura</Select.Option>
-          <Select.Option value="SEALING">Selamento</Select.Option>
-        </Select>
-      </Form.Item>
+      <div className="flex gap-4">
+        <Form.Item
+          name="ordinanceType"
+          label="Tipo de Ordenança"
+          rules={[
+            {
+              required: true,
+              message: "Por favor, selecione o tipo de ordenança",
+            },
+          ]}
+          className="flex-1"
+        >
+          <Select placeholder="Selecione o tipo de ordenança">
+            <Select.Option value="BAPTISTRY">Batistério</Select.Option>
+            <Select.Option value="INITIATORY">Iniciatória</Select.Option>
+            <Select.Option value="ENDOWMENT">Investidura</Select.Option>
+            <Select.Option value="SEALING">Selamento</Select.Option>
+          </Select>
+        </Form.Item>
 
-      <Form.Item
-        name="ordinanceSlot"
-        label="Horário"
-        rules={[{ required: true, message: "Por favor, selecione um horário" }]}
-      >
-        <Select
-          placeholder="Selecione um horário"
-          disabled={!selectedOrdinanceType}
-          options={availableSlots.map((slot) => ({
-            label: slot,
-            value: slot,
-          }))}
-        />
-      </Form.Item>
+        <Form.Item
+          name="ordinanceSlot"
+          label="Horário"
+          rules={[
+            { required: true, message: "Por favor, selecione um horário" },
+          ]}
+          className="flex-1"
+        >
+          <Select
+            placeholder="Selecione um horário"
+            disabled={!selectedOrdinanceType}
+            options={availableSlots.map((slot) => ({
+              label: slot,
+              value: slot,
+            }))}
+          />
+        </Form.Item>
+      </div>
 
       <Form.Item
         name="isFirstTimeConvert"
@@ -465,4 +595,3 @@ export const RegistrationForm = ({
     </Form>
   );
 };
-
